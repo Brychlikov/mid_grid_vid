@@ -19,7 +19,7 @@ class Note:
             raise ValueError("n should be note name or MIDI code")
 
     def __eq__(self, other):
-        return isinstance(other, Note) and self.code == other.code and self.length == other.length
+        return isinstance(other, Note) and self.code == other.code 
 
     def __lt__(self, other):
         assert(isinstance(other, Note))
@@ -39,7 +39,13 @@ class Note:
     
     def __hash__(self):
         # Not very safe, but hey, should work
-        return hash((self.code, self.length))
+        return hash(self.code)
+    
+    def __repr__(self):
+        return f"Note(n={self.name}, length={self.length})"
+
+    def __str__(self):
+        return self.__repr__()
 
 
 

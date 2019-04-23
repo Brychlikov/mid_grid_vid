@@ -86,13 +86,13 @@ def parse_track(track, tempo):
 
 
 def parse_midi(mid):
-    """Parse the entire MIDI file. Returns list of core.Track"""
+    """Parse the entire MIDI file. Returns a 2D list of core.Track"""  # TODO document it better
 
     # I'm gonna make the assumption that track 0 contains tempo information, and that tempo never changes
     tempo = find_tempo_information(mid, mid.tracks[0])
     result = []
     for t in mid.tracks:
-        result.extend(parse_track(t, tempo))
+        result.append(parse_track(t, tempo))
     return result
 
 

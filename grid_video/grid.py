@@ -59,14 +59,15 @@ def make_grid_vid(midi_fname, soundbank_dir, output=None):
     row = []
     columns = ceil(len(parsed) ** 0.5)
     counter = 0
-    for t in parsed:
-        if not t:
-            continue
-        counter += 1
-        row.append(make_track_clip(soundbank, t))
-        if counter % columns == 0:
-            clips.append(row)
-            row = []
+    for midi_track in parsed:
+        for t in midi_track:
+            if not t:
+                continue
+            counter += 1
+            row.append(make_track_clip(soundbank, t))
+            if counter % columns == 0:
+                clips.append(row)
+                row = []
     if row:
         for i in range(columns - len(row)):
             row.append(silence)
