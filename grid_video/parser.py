@@ -58,7 +58,7 @@ def track_iterator(track):
 def parse_track(track, tempo):
     """
     Parses single MIDI track. Midi allows for concurrent sounds on a single track/channel, so this function returns
-    a list of core.Track objects
+    a list of core.Track objects containing non-concurrent notes
     """
 
     buffers = []
