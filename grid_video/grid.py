@@ -10,9 +10,22 @@ from grid_video.parser import parse_midi
 from grid_video.utils import note_name, note_code
 
 
-def make_track_clip(note_bank, track) -> mpy.VideoClip:
+def make_track_clip(note_bank, track, autoshift=False) -> mpy.VideoClip:
     clip_array = []
     silence = note_bank[-1]
+
+    bank_min, bank_max = soundbank_boundaries(note_bank)
+    if autoshift and (track.lowest_note < bank_min or track.highest_note > bank_max):
+        if bank_min.code - track.lowest_note.code >= track.highest_note.code - bank_max.code:
+            octave_offset = (bank_min.code - track.lowest_note.code + 6) // 12 + 1
+            print("shifting track one octave up")
+        else:
+            octave_offset = ((track.highest_note.code - bank_max.code + 6) // 12) * -1
+            print("shifting track one octave down")
+        for note in track:
+            note.code += octave_offset * 12
+
+
     for note in track:
         note_clip = note_bank.get(note.code)
         if note_clip is None:
@@ -33,7 +46,7 @@ def make_track_clip(note_bank, track) -> mpy.VideoClip:
     return mpy.concatenate_videoclips(clip_array)
 
 
-def make_simple_soundbank(directory):
+def make_simple_soundbank(directory, begin_offset=0):
     """makes soundbank based on given directory, assuming that each file name is <soundname>.mp4"""
     result = {}
 
@@ -42,7 +55,7 @@ def make_simple_soundbank(directory):
             no_dir_name = os.path.basename(fname)
             name = no_dir_name[:no_dir_name.find('.')]
             code = note_code(name)
-            result[code] = mpy.VideoFileClip(fname, target_resolution=(1080//5, 1920//5))
+            result[code] = mpy.VideoFileClip(fname, target_resolution=(1080//5, 1920//5)).subclip(begin_offset)
         except ValueError:
             print(f"Couldn't parse file {fname}")
 
@@ -50,21 +63,37 @@ def make_simple_soundbank(directory):
     return result
 
 
-def make_grid_vid(midi_fname, soundbank_dir, output=None):
-    soundbank = make_simple_soundbank(soundbank_dir)
+def soundbank_boundaries(soundbank):
+    min_note = None
+    for k in soundbank.keys():
+        if k != -1 and (min_note is None or k < min_note):
+            min_note = k
+    max_note = max(soundbank.keys())
+    return Note(min_note, 0), Note(max_note, 0)
+
+
+
+def make_grid_vid(midi_fname, soundbank_dir, autoshift, output=None, offset=0):
+    soundbank = make_simple_soundbank(soundbank_dir, begin_offset=offset)
     silence = soundbank[-1]
     mfile = mido.MidiFile(midi_fname)
     parsed = parse_midi(mfile)
     clips = []
     row = []
-    columns = ceil(len(parsed) ** 0.5)
+    track_counter = 0
+    for i in parsed:
+        for t in i:
+            track_counter += 1
+    columns = ceil(track_counter ** 0.5)
     counter = 0
-    for midi_track in parsed:
-        for t in midi_track:
+    for i_midi, midi_track in enumerate(parsed):
+        for i_track, t in enumerate(midi_track):
             if not t:
                 continue
             counter += 1
-            row.append(make_track_clip(soundbank, t))
+            clip = make_track_clip(soundbank, t, autoshift=autoshift)
+            clip.write_videofile(f'tmp/track{i_midi}-{i_track}.mp4')
+            row.append(clip)
             if counter % columns == 0:
                 clips.append(row)
                 row = []
