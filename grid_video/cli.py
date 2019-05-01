@@ -3,6 +3,7 @@ import sys
 import argparse
 import moviepy.editor as mpy
 import mido
+import aubio
 from grid_video.audio import cut_silence
 from grid_video.grid import make_grid_vid
 from grid_video.parser import parse_midi
@@ -40,6 +41,19 @@ def midi_note_pool(midi_fname):
         print(" ".join([n.name for n in l]))
         print()
     return pool
+
+
+def test_pitch(fname):
+    hop_size = 8192
+    win_size = 2 ** 14
+    s = aubio.source(fname, 0, hop_size)
+    pitch_o = aubio.pitch('yin', win_size, hop_size, samplerate=s.samplerate)
+    pitch_o.set_unit('midi')
+    sample, read = s()
+    res = pitch_o(sample)[0]
+    print(res)
+    
+
 
 
 def main():
