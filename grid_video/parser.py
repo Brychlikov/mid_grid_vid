@@ -58,14 +58,14 @@ def track_iterator(track):
 def parse_track(track, tempo):
     """
     Parses single MIDI track. Midi allows for concurrent sounds on a single track/channel, so this function returns
-    a list of core.Track objects
+    a list of core.Track objects containing non-concurrent notes
     """
 
     buffers = []
     timestamp = 0
     for msg in track:
         timestamp += msg.time
-        if msg.type == 'note_on':
+        if msg.type == 'note_on' and msg.velocity != 0:
             for tb in buffers:
                 if tb.is_free:
                     tb.note_start(msg.note, msg.channel, timestamp)
@@ -75,7 +75,7 @@ def parse_track(track, tempo):
                 tb.note_start(msg.note, msg.channel, timestamp)
                 buffers.append(tb)
         
-        elif msg.type == 'note_off':
+        elif msg.type == 'note_off' or (msg.type == 'note_on' and msg.velocity == 0):
             for tb in buffers:
                 if (msg.note, msg.channel) == tb.next_note:
                     tb.note_end(msg.note, msg.channel, timestamp)
@@ -86,13 +86,13 @@ def parse_track(track, tempo):
 
 
 def parse_midi(mid):
-    """Parse the entire MIDI file. Returns list of core.Track"""
+    """Parse the entire MIDI file. Returns a 2D list of core.Track"""  # TODO document it better
 
     # I'm gonna make the assumption that track 0 contains tempo information, and that tempo never changes
     tempo = find_tempo_information(mid, mid.tracks[0])
     result = []
     for t in mid.tracks:
-        result.extend(parse_track(t, tempo))
+        result.append(parse_track(t, tempo))
     return result
 
 

@@ -19,7 +19,7 @@ class Note:
             raise ValueError("n should be note name or MIDI code")
 
     def __eq__(self, other):
-        return isinstance(other, Note) and self.code == other.code and self.length == other.length
+        return isinstance(other, Note) and self.code == other.code 
 
     def __lt__(self, other):
         assert(isinstance(other, Note))
@@ -39,7 +39,13 @@ class Note:
     
     def __hash__(self):
         # Not very safe, but hey, should work
-        return hash((self.code, self.length))
+        return hash(self.code)
+    
+    def __repr__(self):
+        return f"Note(n={self.name}, length={self.length})"
+
+    def __str__(self):
+        return self.__repr__()
 
 
 
@@ -54,8 +60,8 @@ class Track(list):
 
     def append(self, element: Note):
         self.note_pool.add(element)
-        if self.lowest_note is None or element < self.lowest_note:
+        if element.code != -1 and (self.lowest_note is None or element < self.lowest_note):
             self.lowest_note = element
-        if self.highest_note is None or element > self.highest_note:
+        if element.code != -1 and (self.highest_note is None or element > self.highest_note):
             self.highest_note = element
         super().append(element)

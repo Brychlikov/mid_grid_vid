@@ -3,6 +3,7 @@ soundbanks/
 output/
 thrash/
 midis/
+tmp/
 TODO
 .idea/
 .vscode/

@@ -3,7 +3,7 @@ from setuptools import setup
 setup(name='grid_video',
       version='0.1',
       description='This thing makes grid-style music videos from a given set of one note clips',
-      url='http://github.com/storborg/funniest',
+      url='https://gitlab.com/Brych/mid_grid_vid',
       author='Brych',
       author_email='brychlikow@gmail.com',
       license='MIT',
@@ -16,6 +16,7 @@ setup(name='grid_video',
       install_requires=[
             'moviepy',
             'numpy',
-            'mido'
+            'mido',
+            'aubio'
       ])
 
