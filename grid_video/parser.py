@@ -65,7 +65,7 @@ def parse_track(track, tempo):
     timestamp = 0
     for msg in track:
         timestamp += msg.time
-        if msg.type == 'note_on':
+        if msg.type == 'note_on' and msg.velocity != 0:
             for tb in buffers:
                 if tb.is_free:
                     tb.note_start(msg.note, msg.channel, timestamp)
@@ -75,7 +75,7 @@ def parse_track(track, tempo):
                 tb.note_start(msg.note, msg.channel, timestamp)
                 buffers.append(tb)
         
-        elif msg.type == 'note_off':
+        elif msg.type == 'note_off' or (msg.type == 'note_on' and msg.velocity == 0):
             for tb in buffers:
                 if (msg.note, msg.channel) == tb.next_note:
                     tb.note_end(msg.note, msg.channel, timestamp)

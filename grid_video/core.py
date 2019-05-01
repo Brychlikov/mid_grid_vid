@@ -60,8 +60,8 @@ class Track(list):
 
     def append(self, element: Note):
         self.note_pool.add(element)
-        if self.lowest_note is None or element < self.lowest_note:
+        if element.code != -1 and (self.lowest_note is None or element < self.lowest_note):
             self.lowest_note = element
-        if self.highest_note is None or element > self.highest_note:
+        if element.code != -1 and (self.highest_note is None or element > self.highest_note):
             self.highest_note = element
         super().append(element)
