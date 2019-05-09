@@ -1,5 +1,5 @@
 import mido
-from grid_video.core import Note, Track
+from grid_video.core import Note, Track, TrackAggregate
 
 # TODO
 # Change tempo detection. It should detect tempo changes mid-track
@@ -90,7 +90,7 @@ def parse_midi(mid):
 
     # I'm gonna make the assumption that track 0 contains tempo information, and that tempo never changes
     tempo = find_tempo_information(mid, mid.tracks[0])
-    result = []
+    result = TrackAggregate()
     for t in mid.tracks:
         result.append(parse_track(t, tempo))
     return result
