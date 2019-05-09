@@ -18,6 +18,12 @@ class Note:
         else:
             raise ValueError("n should be note name or MIDI code")
 
+    def shift(self, n):
+        if self.code == -1:
+            return self
+        else:
+            return Note(self.code + n, self.length)
+
     def __eq__(self, other):
         return isinstance(other, Note) and self.code == other.code 
 
@@ -58,6 +64,16 @@ class Track(list):
         self.highest_note = None
         self.note_pool = set()
 
+        if len(self) > 1:
+            self.highest_note = max(self)
+
+            for n in self:
+                if n.code != -1 and (self.lowest_note is None or n < self.lowest_note):
+                    self.lowest_note = n
+            
+            self.note_pool = set(self)
+
+
     def append(self, element: Note):
         self.note_pool.add(element)
         if element.code != -1 and (self.lowest_note is None or element < self.lowest_note):
@@ -65,3 +81,6 @@ class Track(list):
         if element.code != -1 and (self.highest_note is None or element > self.highest_note):
             self.highest_note = element
         super().append(element)
+
+    def total_length(self):
+        return sum([n.length for n in self if n.code != -1])

@@ -5,7 +5,7 @@ import os
 import sys
 from math import ceil
 
-from grid_video.core import Note
+from grid_video.core import Note, Track
 from grid_video.parser import parse_midi
 from grid_video.utils import note_name, note_code
 
@@ -17,19 +17,19 @@ def make_track_clip(note_bank, track, autoshift=False) -> mpy.VideoClip:
     bank_min, bank_max = soundbank_boundaries(note_bank)
     if autoshift and (track.lowest_note < bank_min or track.highest_note > bank_max):
         if bank_min.code - track.lowest_note.code >= track.highest_note.code - bank_max.code:
-            octave_offset = (bank_min.code - track.lowest_note.code + 6) // 12 + 1
+            octave_offset = (bank_min.code - track.lowest_note.code) // 12 + 1
             print("shifting track one octave up")
         else:
-            octave_offset = ((track.highest_note.code - bank_max.code + 6) // 12) * -1
+            octave_offset = ((track.highest_note.code - bank_max.code) // 12 + 1) * -1
             print("shifting track one octave down")
-        for note in track:
-            note.code += octave_offset * 12
 
+        oldtrack = track
+        track = Track([n.shift(octave_offset * 12) for n in track])
 
     for note in track:
         note_clip = note_bank.get(note.code)
         if note_clip is None:
-            print(f'note not found: {note.code}')
+            print(f'note not found: {note}')
             note_clip = silence
 
         if note.length <= note_clip.duration:
@@ -92,7 +92,7 @@ def make_grid_vid(midi_fname, soundbank_dir, autoshift, output=None, offset=0):
                 continue
             counter += 1
             clip = make_track_clip(soundbank, t, autoshift=autoshift)
-            clip.write_videofile(f'tmp/track{i_midi}-{i_track}.mp4')
+            # clip.write_videofile(f'tmp/track{i_midi}-{i_track}.mp4')
             row.append(clip)
             if counter % columns == 0:
                 clips.append(row)
@@ -106,4 +106,4 @@ def make_grid_vid(midi_fname, soundbank_dir, autoshift, output=None, offset=0):
     if output is None:
         return final
     else:
-        final.write_videofile(output)
+        final.write_videofile(output, threads=10)
