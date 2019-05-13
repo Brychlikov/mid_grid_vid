@@ -1,7 +1,9 @@
 from dataclasses import dataclass
 
 import grid_video.utils as utils
-import grid_video.my_grid.Soundbank as Soundbank
+
+
+PAD_ACCURACY = 1e-6
 
 
 class Note:
@@ -83,14 +85,26 @@ class Track(list):
             self.highest_note = element
         super().append(element)
 
-    def total_length(self):
+    def total_sound_length(self):
         return sum([n.length for n in self if n.code != -1])
+
+    def total_length(self):
+        return sum([n.length for n in self])
+
+    def pad_to_duration(self, duration):
+        pad = duration - self.total_length() 
+        if pad < PAD_ACCURACY * -1:
+            raise ValueError("Track is already longer than specified duration")
+        elif pad > PAD_ACCURACY * -1 and pad < PAD_ACCURACY:
+            pass
+        else:
+            self.append(Note('silence', pad))
 
 class TrackAggregate(list):
     """Representation of a midi track containing multiple Track objects"""
 
     def __init__(self, *args, **kwargs):
-        super.__init__(*args, **kwargs)
+        super().__init__(*args, **kwargs)
 
         self.lowest_note = None
         self.highest_note = None
@@ -104,9 +118,9 @@ class TrackAggregate(list):
         
     def append(self, element: Track):
 
-        if element.lowest_note < self.lowest_note:
+        if self.lowest_note is None or element.lowest_note < self.lowest_note:
             self.lowest_note = element.lowest_note
-        if element.highest_note > self.highest_note:
+        if self.highest_note is None or element.highest_note > self.highest_note:
             self.highest_note = element.highest_note
         
         super().append(element)
@@ -119,9 +133,42 @@ class TrackAggregate(list):
                 return False
         return True
 
-    def adapt_to(sb: Soundbank, mode='octave'):
+    def pad_to_duration(self, duration):
+        for t in self:
+            t.pad_to_duration(duration)
+
+    def adapt_to(self, sb, mode='octave', max_correction=1):  # TODO add typehints
+        if self.is_empty():
+            return
+
         if mode == 'octave':
-            pass
+            sb_low, sb_high = sb.boundaries()
+
+            left_deficit = sb_low.code - self.lowest_note.code
+            right_deficit = self.highest_note.code - sb_high.code
+
+            if left_deficit > 0 and right_deficit > 0:
+                print("WARNING: Soundbank too small for one of the tracks")
+                return None  # Soundbank is too small for the track, better leave it for now
+            
+            if left_deficit < 0 and right_deficit < 0:
+                return None  # Track fits inside Soundbank
+
+            if left_deficit > right_deficit:
+                octave_offset = min((left_deficit // 12 + 1, max_correction))
+            elif right_deficit > left_deficit:
+                octave_offset = min((right_deficit // 12 + 1, max_correction)) * -1
+            else:
+                print("WARNING: Can't fit a track into the soundbank. Maybe try mode='tone'")
+                return None
+
+            for i, t in enumerate(self):
+                temp = Track([n.shift(octave_offset * 12) for n in t])
+                self[i] = temp
+            
+            print("IT ACTUALLY SHIFTED SOMETHING HYPE")
+            print(f"shifted track by {octave_offset} octaves")
+
         elif mode == 'tone':
             raise NotImplementedError("No tone corretion ATM")
         else:

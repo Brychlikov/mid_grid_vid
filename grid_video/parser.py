@@ -38,6 +38,10 @@ class TrackBuffer:
         self.is_free = True
         self.last_timestamp = timestamp
 
+    def force_note_end(self, timestamp):
+        self.note_end(self.next_note[0], self.next_note[1], timestamp)
+
+
 
 def find_tempo_information(mid, track):
     """Tries to extract length of a tick in seconds"""
@@ -82,7 +86,12 @@ def parse_track(track, tempo):
                     break
             else:
                 print("WARNING: Ending a non-started note")
-    return [tb.buffer for tb in buffers]
+
+    for tb in buffers:
+        if not tb.is_free:
+            tb.force_note_end(timestamp)
+
+    return TrackAggregate([tb.buffer for tb in buffers])
 
 
 def parse_midi(mid):
@@ -93,6 +102,9 @@ def parse_midi(mid):
     result = TrackAggregate()
     for t in mid.tracks:
         result.append(parse_track(t, tempo))
+
+    max_length = max([i[0].total_length() for i in result if len(i) > 0])
+    result.pad_to_duration(max_length)
     return result
 
 
