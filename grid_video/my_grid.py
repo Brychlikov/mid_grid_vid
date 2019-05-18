@@ -51,6 +51,7 @@ class NoteClip:
     
 
 class Soundbank(dict):
+    # This class does too much. I think ffmpeg related stuff should be moved to a different class.
     def __init__(self, directory, begin_offset=0):
         for fname in glob.glob(os.path.join(directory, "*")):
             try:
@@ -76,9 +77,11 @@ class Soundbank(dict):
         return Note(min_note, 0), Note(max_note, 0)
 
     def make_ffmpeg_entry(self, note: Note, debug=""):
+        # Prolly should move it
+        # Should I really tho?
         result = ""
         result += f"# {note} {debug}\n"
-        clip = self[note.code]
+        clip = self.get(note.code)
         actual_clip_duration = clip.duration - self.begin_offset
 
         if actual_clip_duration >= note.length:
@@ -105,6 +108,7 @@ class Soundbank(dict):
         return result
 
     def make_track_file(self, track: Track, fname=None):
+        # Prolly should move it
         if fname is None:
             fname = os.path.join(TEMP_DIR, "ffmpeg_concat_" + str(random.randint(1, 10000000)))
         with open(fname, 'w') as file:
@@ -132,17 +136,15 @@ class Soundbank(dict):
         
         self.audiobank = Soundbank(new_path, begin_offset=self.begin_offset)
 
-
-    def __getitem__(self, obj):
+    def get(self, obj):
         r = super().get(obj)
         if r is None:
-            print(f"Warning: Note not found {obj}")
+            print(f"Warning: Note {obj} not found. Silence used instead")
             r = self.silence
         return r
 
 
 def make_track_vid(soundbank, track: Track, output_fname=None):
-    silence = soundbank[-1]
 
     if output_fname is None:
         output_fname = os.path.join(TEMP_DIR, "track_" + str(random.randint(1, 1000000000)) + ".avi")
@@ -170,8 +172,6 @@ def make_track_vid(soundbank, track: Track, output_fname=None):
 
 
 def make_track_audio(soundbank, track: Track, output_fname=None):
-    silence = soundbank[-1]
-
     if output_fname is None:
         output_fname = os.path.join(TEMP_DIR, "track_" + str(random.randint(1, 1000000000)) + ".wav")
 
@@ -269,7 +269,7 @@ def build_grid(clip_fnames, output_fname):
     width, height = check_resolution(clip_fnames[0])
     final_width, final_height = width * size, height * size
 
-    filter_complex = f"nullsrc=size={final_width}x{final_height} [base]; "
+    filter_complex = f"color=size={final_width}x{final_height}:color=Black [base]; "
     
     # set the same presentation timestamp of the first frame for all of them
     for i, c in enumerate(clip_fnames):
