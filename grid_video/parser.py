@@ -1,5 +1,5 @@
 import mido
-from grid_video.core import Note, Track
+from grid_video.core import Note, Track, TrackAggregate
 
 # TODO
 # Change tempo detection. It should detect tempo changes mid-track
@@ -37,6 +37,10 @@ class TrackBuffer:
         self.next_note = ()
         self.is_free = True
         self.last_timestamp = timestamp
+
+    def force_note_end(self, timestamp):
+        self.note_end(self.next_note[0], self.next_note[1], timestamp)
+
 
 
 def find_tempo_information(mid, track):
@@ -82,7 +86,12 @@ def parse_track(track, tempo):
                     break
             else:
                 print("WARNING: Ending a non-started note")
-    return [tb.buffer for tb in buffers]
+
+    for tb in buffers:
+        if not tb.is_free:
+            tb.force_note_end(timestamp)
+
+    return TrackAggregate([tb.buffer for tb in buffers])
 
 
 def parse_midi(mid):
@@ -90,9 +99,12 @@ def parse_midi(mid):
 
     # I'm gonna make the assumption that track 0 contains tempo information, and that tempo never changes
     tempo = find_tempo_information(mid, mid.tracks[0])
-    result = []
+    result = TrackAggregate()
     for t in mid.tracks:
         result.append(parse_track(t, tempo))
+
+    max_length = max([i[0].total_length() for i in result if len(i) > 0])
+    result.pad_to_duration(max_length)
     return result
 
 

@@ -6,7 +6,8 @@ import mido
 import glob
 import aubio
 from grid_video.audio import cut_silence
-from grid_video.grid import make_grid_vid
+# from grid_video.grid import make_grid_vid
+from grid_video.my_grid import make_grid_vid
 from grid_video.parser import parse_midi
 from grid_video.core import Track, Note
 from grid_video.utils import note_code, note_name
