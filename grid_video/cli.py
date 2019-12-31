@@ -26,7 +26,10 @@ def trim_clips(input, output):
     elif os.path.isfile(input):  # Should be a single file right there
         print(3)
         clip = mpy.VideoFileClip(input)
-        cut_silence(clip).write_videofile(output)
+        try:
+            cut_silence(clip).write_videofile(output)
+        except ValueError:
+            cut_silence(clip).write_videofile(output, codec="mpeg4")
         return
     else:
         raise ValueError("Unrecognized argument: " + input)
@@ -37,7 +40,10 @@ def trim_clips(input, output):
     for fname in file_list:
         clip = mpy.VideoFileClip(fname)
         result = cut_silence(clip)
-        result.write_videofile(os.path.join(output, os.path.basename(fname)))
+        try:
+            result.write_videofile(os.path.join(output, os.path.basename(fname)))
+        except ValueError:
+            result.write_videofile(os.path.join(output, os.path.basename(fname)), codec="mpeg4")
 
 
 def midi_note_pool(midi_fname):
@@ -61,7 +67,7 @@ def test_pitch(fname):
     pitch_o.set_unit('midi')
     sample, read = s()
     res = pitch_o(sample)[0]
-    print(res)
+    print(res, pitch_o.get_confidence())
     
 
 
@@ -98,7 +104,7 @@ def main():
     elif args.command == 'trim':
         trim_clips(args.fname, args.output)
     elif args.command == 'pitch':
-        test_pitch(args.fname)
+        test_pitch(args.fname[0])
 
 
 if __name__ == "__main__":
