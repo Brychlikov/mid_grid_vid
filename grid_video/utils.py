@@ -1,3 +1,5 @@
+import os
+
 MIDI_NOTE_NUM = {
     'c': 0,
     'c#': 1,
@@ -64,3 +66,8 @@ def note_code(name):
 
 
 
+def split_path(path):
+    # TODO move it to utils. Watch out for copy in my_grid.py
+    dirname, fname = os.path.split(path)
+    basename, ext = os.path.splitext(fname)
+    return dirname, basename, ext

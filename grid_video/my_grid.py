@@ -11,7 +11,8 @@ from grid_video.utils import note_code, note_name
 from grid_video.parser import parse_midi
 
 
-TEMP_DIR = '/mnt/Data/grid_tmp'
+# TEMP_DIR = '/mnt/Data/grid_tmp'
+TEMP_DIR = "/tmp/mid_grid_vid"
 
 
 class NoteClip:
