@@ -1,4 +1,5 @@
 import random
+import shutil
 import os.path
 import subprocess
 
@@ -15,9 +16,49 @@ class FFMPEGErrorException(Exception):
 
 
 class BaseClip:
+    
+    def __init__(self, source, name_base):
+        self.result_fname = source.result_fname
+        self.source = source
+        self.name_base = name_base
+
+    def separate_raw_audio(self):
+        return RawAudioClip(self.source, self.name_base)
+
+    def write_to(self, path):
+        shutil.copy(self.source.result_fname, path)
 
 
-class FilterClip:
+
+class RawAudioClip(BaseClip):
+    def __init__(self, source, name_base):
+        self.name_base = name_base + "_audioonly"
+        self.output_path = self.name_base + ".wav"
+        self.source = source
+        self.executed = False
+
+    def _run_ffmpeg(self):
+        args = [
+                "ffmpeg", "-y",
+                "-i", self.source.result_fname,
+                "-vn", 
+                "-acodec", "pcm_s16le",
+                self.output_path
+        ]
+        res = subprocess.run(args, capture_output=True)
+        if res.returncode != 0:
+            raise FFMPEGErrorException(res.stderr.decode())
+
+    @property
+    def result_fname(self):
+        if not self.executed:
+            self._run_ffmpeg()
+            self.executed = True
+        return self.output_path
+
+
+
+class FilterClip(BaseClip):
 
     def __init__(self, filter_string, dependencies, video_streams=1, audio_streams=1):
         self.dependencies = dependencies
@@ -92,7 +133,7 @@ class ConcatFilter:
         return FilterClip(self.filter_complex, self.clip_list)
 
 
-class DemuxAudioClip:
+class DemuxAudioClip(BaseClip):
     def __init__(self, concat_template, dependencies, output_path=None):
         self.concat_template = concat_template
         self.dependencies = dependencies
@@ -129,7 +170,7 @@ class DemuxAudioClip:
         return self.output_path
 
 
-class DemuxVideoClip:
+class DemuxVideoClip(BaseClip):
     def __init__(self, concat_template, dependencies, output_path=None):
         self.concat_template = concat_template
         self.dependencies = dependencies
@@ -167,7 +208,7 @@ class DemuxVideoClip:
         return self.output_path
 
 
-class AudioVideoMergeClip:
+class AudioVideoMergeClip(BaseClip):
 
     def __init__(self, video_clip, audio_clip, output_path):
         self.video_clip = video_clip
