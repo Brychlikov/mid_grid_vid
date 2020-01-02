@@ -1,10 +1,21 @@
 import random
+import os.path
 import subprocess
+
+
+# TODO Add common base class with methods such as
+# separate_raw_audio
+# result_fname
+# write_to
 
 
 class FFMPEGErrorException(Exception):
     def __init__(self, msg, *args, **kwargs):
         super().__init__("FFMPEG error: " + msg, *args, **kwargs)
+
+
+class BaseClip:
+
 
 class FilterClip:
 
@@ -43,6 +54,7 @@ class FilterClip:
     def result_fname(self):
         if not self.executed:
             self._run_ffmpeg()
+            self.executed = True
         return self.output_path
 
     @classmethod
@@ -79,6 +91,117 @@ class ConcatFilter:
     def build(self):
         return FilterClip(self.filter_complex, self.clip_list)
 
+
+class DemuxAudioClip:
+    def __init__(self, concat_template, dependencies, output_path=None):
+        self.concat_template = concat_template
+        self.dependencies = dependencies
+        self.output_path = output_path
+        self.executed = False
+
+    def _run_ffmpeg(self):
+        args = [
+                "ffmpeg", "-y",
+                "-loglevel", "error",
+                "-f", "concat",
+                "-safe", "0",
+                "-protocol_whitelist", "file,http,https,tcp,tls,pipe",  # Fixes "Protocol 'file' not on whilelist 'crypto' error"
+                "-segment_time_metadata", "1",
+                "-i", "pipe:",
+                "-vn", 
+                "-af", "asetnsamples=1,aselect=concatdec_select",
+                self.output_path
+        ]
+
+
+        res = subprocess.run(args, capture_output=True, input=self.concat_template.format(
+            *[os.path.abspath(c.result_fname) for c in self.dependencies])
+            .encode())
+
+        if res.returncode != 0:
+            raise FFMPEGErrorException(res.stderr.decode())
+
+    @property
+    def result_fname(self):
+        if not self.executed:
+            self._run_ffmpeg()
+            self.executed = True
+        return self.output_path
+
+
+class DemuxVideoClip:
+    def __init__(self, concat_template, dependencies, output_path=None):
+        self.concat_template = concat_template
+        self.dependencies = dependencies
+        self.output_path = output_path
+        self.executed = False
+
+    def _run_ffmpeg(self):
+        args = [
+                "ffmpeg", "-y",
+                "-loglevel", "error",
+                "-f", "concat",
+                "-safe", "0",
+                "-protocol_whitelist", "file,http,https,tcp,tls,pipe",  # Fixes "Protocol 'file' not on whilelist 'crypto' error"
+                "-segment_time_metadata", "1",
+                "-i", "pipe:",
+                "-an", 
+                "-vf", "select=concatdec_select",
+                "-c:v", "mpeg4",  # Don't remember why its necessary
+                self.output_path
+        ]
+
+
+        res = subprocess.run(args, capture_output=True, input=self.concat_template.format(
+            *[os.path.abspath(c.result_fname) for c in self.dependencies])
+            .encode())
+
+        if res.returncode != 0:
+            raise FFMPEGErrorException(res.stderr.decode())
+
+    @property
+    def result_fname(self):
+        if not self.executed:
+            self._run_ffmpeg()
+            self.executed = True
+        return self.output_path
+
+
+class AudioVideoMergeClip:
+
+    def __init__(self, video_clip, audio_clip, output_path):
+        self.video_clip = video_clip
+        self.audio_clip = audio_clip
+
+        self.output_path = output_path
+        self.executed = False
+
+    def _run_ffmpeg(self):
+        args = [
+                "ffmpeg", "-y",
+                "-i", self.video_clip.result_fname,
+                "-i", self.audio_clip.result_fname,
+                "-c", "copy",
+                "-shortest",
+                self.output_path
+        ]
+
+        res = subprocess.run(args, capture_output=True)
+        if res.returncode != 0:
+            raise FFMPEGErrorException(res.stderr.decode())
+
+    def write_to(self, output_path):
+        self.output_path = output_path
+        self._run_ffmpeg()
+
+    @property
+    def result_fname(self):
+        if not self.executed:
+            self._run_ffmpeg()
+            self.executed = True
+        return self.output_path
+
+
 class ConcatDemux:
     def __init__(self, durlist):
         """durlist - list of tuples in form of (clip, inpoint, outpoint)"""
@@ -90,15 +213,30 @@ class ConcatDemux:
         for _clip, inpoint, outpoint in self.durlist:
             self.template += "file '{}'\n"
             self.template += f"inpoint {inpoint}\n"
-            self.template += f"oupoint {outpoint}\n"
+            self.template += f"outpoint {outpoint}\n"
             self.template += "\n"
 
+    def build(self):
+        return AudioVideoMergeClip(
+                DemuxVideoClip(self.template, self.dependencies, 'temp_demux_video.avi'),
+                DemuxAudioClip(self.template, self.dependencies, 'temp_demux_audio.wav'),
+                'temp_demux_full.avi'
+                )
 
 
 
 if __name__ == "__main__":
     clip1 = FileClip("./soundbanks/copy_guitar/a3.avi")
-    clip2 = FileClip("./soundbanks/copy_guitar/a4.avi")
+    clip2 = FileClip("./soundbanks/copy_guitar/c4.avi")
+    clip3 = FileClip("./soundbanks/copy_guitar/e4.avi")
+    clip4 = FileClip("./soundbanks/copy_guitar/a4.avi")
 
-    res = ConcatFilter(clip1, clip2).build()
+
+    res = ConcatDemux([
+            (clip1, 0, 1),
+            (clip2, 0, 1),
+            (clip3, 0, 1),
+            (clip4, 0, 1),
+            (clip1, 0, 1),
+            ]).build()
     res.write_to('concattest2.avi')
