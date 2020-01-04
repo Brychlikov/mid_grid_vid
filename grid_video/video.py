@@ -1,7 +1,12 @@
 import random
+from math import ceil, sqrt
+import json
+from itertools import repeat, chain
 import shutil
 import os.path
+from utils import split_path
 import subprocess
+from abc import ABCMeta, abstractmethod, abstractproperty
 
 
 # TODO Add common base class with methods such as
@@ -15,29 +20,39 @@ class FFMPEGErrorException(Exception):
         super().__init__("FFMPEG error: " + msg, *args, **kwargs)
 
 
-class BaseClip:
-    
-    def __init__(self, source, name_base):
-        self.result_fname = source.result_fname
-        self.source = source
-        self.name_base = name_base
+class BaseClip(metaclass=ABCMeta):
 
+    suffix = "_"
+    
     def separate_raw_audio(self):
-        return RawAudioClip(self.source, self.name_base)
+        return RawAudioClip(self)
+
+    @abstractproperty
+    def result_fname(self):
+        return
 
     def write_to(self, path):
-        shutil.copy(self.source.result_fname, path)
+        shutil.copy(self.result_fname, path)
 
+    def get_resolution(self):
+        if self.__dict__.get('dependencies'):
+            return self.dependencies[0]
+        else:
+            return None
 
 
 class RawAudioClip(BaseClip):
-    def __init__(self, source, name_base):
-        self.name_base = name_base + "_audioonly"
+
+    suffix = "_audioonly"
+
+    def __init__(self, source):
+        self.name_base = source.name_base + "_audioonly"
         self.output_path = self.name_base + ".wav"
         self.source = source
         self.executed = False
 
     def _run_ffmpeg(self):
+        print("Executing", self.name_base)
         args = [
                 "ffmpeg", "-y",
                 "-i", self.source.result_fname,
@@ -56,20 +71,29 @@ class RawAudioClip(BaseClip):
             self.executed = True
         return self.output_path
 
+    def get_resolution(self):
+        return None
+
 
 
 class FilterClip(BaseClip):
+
+    suffix = "_filter"
 
     def __init__(self, filter_string, dependencies, video_streams=1, audio_streams=1):
         self.dependencies = dependencies
         self.filter_string = filter_string
         self.map_list = []
-        self.output_path = "TEMP"
+        self.name_base = dependencies[0].name_base + "_filter-" + self.filter_string[:self.filter_string.find('=')]
+        self.extention = '.avi'
+        self.output_path = self.name_base + self.extention
         self.video_streams = video_streams
         self.audio_streams = audio_streams
         self.executed = False
 
     def _run_ffmpeg(self):
+        print("Executing", self.name_base)
+        print("Executing", self.name_base)
 
         fname_list = [d.result_fname for d in self.dependencies]
         input_args = []
@@ -86,11 +110,6 @@ class FilterClip(BaseClip):
         if res.returncode != 0:
             raise FFMPEGErrorException(res.stderr.decode())
 
-
-    def write_to(self, fname):
-        self.output_path = fname
-        self._run_ffmpeg()
-
     @property
     def result_fname(self):
         if not self.executed:
@@ -98,23 +117,81 @@ class FilterClip(BaseClip):
             self.executed = True
         return self.output_path
 
-    @classmethod
-    def concat_filter(cls, c1, c2):
-        filter_complex = "[0:0] [0:1] [1:0] [1:1] concat=a=1"
-        return FilterClip(filter_complex, [c1, c2])
+
+
+class AudioMixClip(BaseClip):
+    # TODO Rewrite as Filter and FilterClip
+
+    def __init__(self, dependencies):
+        self.dependencies = dependencies
+        self.name_base = self.dependencies[0].name_base + "_audiomix"
+        self.extention = '.wav'
+        self.output_path = self.name_base + self.extention
+        self.executed = False
+
+    def _run_ffmpeg(self):
+        print("Executing", self.name_base)
+        print("Executing", self.name_base)
+        def flatten(l):
+            return chain.from_iterable(l)
+        input_list = flatten(zip(repeat("-i"), (c.result_fname for c in self.dependencies)))
+        args = [
+                "ffmpeg", "-y",
+                *input_list,
+                "-filter_complex", f"amix=inputs={len(self.dependencies)}",
+                "-vn",
+                "-ac", "2",
+                self.output_path
+        ]
+
+        res = subprocess.run(args, capture_output=True)
+        if res.returncode != 0:
+            raise FFMPEGErrorException(res.stderr.decode())
+
+    @property
+    def result_fname(self):
+        if not self.executed:
+            self._run_ffmpeg()
+            self.executed = True
+        return self.output_path
     
-# TODO
-# Add a class to abstract separation of audio and video curing cutting
-# Also maybe a class for concat demuxer
 
 
+class FileClip(BaseClip):
 
-class FileClip:
+    suffix = "_nonreachable"
+
     def __init__(self, fname):
-        self.result_fname = fname
+        self.output_path = fname
         self.executed = True
+        _directory, base, _ext = split_path(fname)
+        self.name_base = 'tmp_' + base
         self.video_streams = 1
         self.audio_streams = 1
+
+    @property
+    def result_fname(self):
+        return self.output_path
+    
+    def get_resolution(self):
+        res = subprocess.run([
+            'ffprobe', 
+            '-hide_banner',
+            # '-v', 'quiet',
+            '-print_format', 'json', 
+            '-show_streams',
+            self.result_fname
+        ], capture_output=True)
+
+        if res.returncode != 0:
+            raise FFMPEGErrorException(res.stderr.decode())
+        
+        data = json.loads(res.stdout)
+        width = data["streams"][0]["width"]
+        height = data["streams"][0]["height"]
+
+        return width, height
+
 
 
 class ConcatFilter:
@@ -133,14 +210,22 @@ class ConcatFilter:
         return FilterClip(self.filter_complex, self.clip_list)
 
 
+
 class DemuxAudioClip(BaseClip):
-    def __init__(self, concat_template, dependencies, output_path=None):
+
+    suffix = "_conaudio"
+
+    def __init__(self, concat_template, dependencies):
         self.concat_template = concat_template
-        self.dependencies = dependencies
-        self.output_path = output_path
+        self.dependencies = [c.separate_raw_audio() for c in dependencies]
+        self.name_base = dependencies[0].name_base + self.suffix
+        self.extention = '.avi'
+        self.output_path = self.name_base + self.extention
         self.executed = False
 
     def _run_ffmpeg(self):
+        print("Executing", self.name_base)
+        print("Executing", self.name_base)
         args = [
                 "ffmpeg", "-y",
                 "-loglevel", "error",
@@ -170,14 +255,21 @@ class DemuxAudioClip(BaseClip):
         return self.output_path
 
 
+
 class DemuxVideoClip(BaseClip):
-    def __init__(self, concat_template, dependencies, output_path=None):
+
+    suffix = "_convideo"
+
+    def __init__(self, concat_template, dependencies):
         self.concat_template = concat_template
         self.dependencies = dependencies
-        self.output_path = output_path
+        self.name_base = dependencies[0].name_base + self.suffix
+        self.extention = '.avi'
+        self.output_path = self.name_base + self.extention
         self.executed = False
 
     def _run_ffmpeg(self):
+        print("Executing", self.name_base)
         args = [
                 "ffmpeg", "-y",
                 "-loglevel", "error",
@@ -208,20 +300,30 @@ class DemuxVideoClip(BaseClip):
         return self.output_path
 
 
+
 class AudioVideoMergeClip(BaseClip):
 
-    def __init__(self, video_clip, audio_clip, output_path):
+    suffix = "_mergeaudio"
+
+    def __init__(self, video_clip, audio_clip):
         self.video_clip = video_clip
         self.audio_clip = audio_clip
+        self.name_base = video_clip.name_base + self.suffix
+        self.extention = '.avi'
 
-        self.output_path = output_path
+
+        self.output_path = self.name_base + self.extention
         self.executed = False
 
     def _run_ffmpeg(self):
+        print("Executing", self.name_base)
+        print("Merging", self.video_clip.name_base, self.audio_clip.name_base)
         args = [
                 "ffmpeg", "-y",
                 "-i", self.video_clip.result_fname,
                 "-i", self.audio_clip.result_fname,
+                "-map", "0:0",
+                "-map", "1:0",
                 "-c", "copy",
                 "-shortest",
                 self.output_path
@@ -243,6 +345,7 @@ class AudioVideoMergeClip(BaseClip):
         return self.output_path
 
 
+
 class ConcatDemux:
     def __init__(self, durlist):
         """durlist - list of tuples in form of (clip, inpoint, outpoint)"""
@@ -259,10 +362,78 @@ class ConcatDemux:
 
     def build(self):
         return AudioVideoMergeClip(
-                DemuxVideoClip(self.template, self.dependencies, 'temp_demux_video.avi'),
-                DemuxAudioClip(self.template, self.dependencies, 'temp_demux_audio.wav'),
-                'temp_demux_full.avi'
-                )
+                DemuxVideoClip(self.template, self.dependencies),
+                DemuxAudioClip(self.template, self.dependencies),
+                'temp_demux_full.avi')
+
+class ScaleFilter:
+    
+    def __init__(self, source, target):
+        self.source = source
+        if isinstance(target, tuple):
+            self.width, self.height = target
+            self.filter_string = f"scale=w={self.width}:h={self.height}"
+        elif isinstance(target, int):
+            source_width, source_height = source.get_resolution()
+            self.filter_string = f"scale=w=iw/{target}:h=ih/{target}"
+            self.width, self.height = source_width // target, source_height // target
+        else:
+            raise ValueError("Invalid value of target")
+
+    def build(self):
+        result = FilterClip(self.filter_string, [self.source])
+        # TODO rewrite this thing
+        # its absolutely disgusting
+        # i feel dirty
+        result.get_resolution = lambda: (self.width, self.height)
+        return result
+
+class GridFilter:
+
+    def __init__(self, sources, shrink_to_original_size=True):
+        size = ceil(sqrt(len(sources)))
+        def coords(index):
+            return index // size, index % size
+        
+        def string_coords(index):
+            temp = coords(index)
+            return f"{temp[0]}-{temp[1]}"
+
+        clip_width, clip_height = sources[0].get_resolution()
+        if shrink_to_original_size:
+            final_width, final_height = clip_width, clip_height
+            sources = [ScaleFilter(c, size).build() for c in sources]
+            width, height = clip_width // size, clip_height // size
+        else:
+            final_width, final_height = clip_width * size, clip_height * size
+            width, height = clip_width, clip_height
+
+        self.filter_complex = f"color=size={final_width}x{final_height}:color=Black [base]; \n"
+
+        for i, _c in enumerate(sources):
+            self.filter_complex += f"[{i}:v] setpts=PTS-STARTPTS, scale={width}x{height} [single{string_coords(i)}]; \n"
+
+        self.sources = sources
+
+        previous_step = "[base]"
+        
+        for i in range(len(sources) - 1):  # overlay entries for all but last step
+            # this would be simpler if I got rid of FilterClip and/or added -map support
+            y, x = coords(i)
+            self.filter_complex += f"{previous_step}[single{string_coords(i)}] overlay=shortest=1:x={x*width}:y={y*height} [stage{i}]; \n"
+            previous_step = f"[stage{i}]"
+
+        last = len(sources) - 1
+        y, x = coords(last)
+        self.filter_complex += f"{previous_step}[single{string_coords(last)}] overlay=shortest=1:x={x*width}:y={y*height}\n"
+    
+    def build(self):
+        print("EXECUTING FINAL FILTER")
+        print(self.filter_complex)
+        grid_video = FilterClip(self.filter_complex, self.sources)
+        audio_clip = AudioMixClip([c.separate_raw_audio() for c in self.sources])
+        return AudioVideoMergeClip(grid_video, audio_clip)
+
 
 
 
@@ -273,11 +444,10 @@ if __name__ == "__main__":
     clip4 = FileClip("./soundbanks/copy_guitar/a4.avi")
 
 
-    res = ConcatDemux([
-            (clip1, 0, 1),
-            (clip2, 0, 1),
-            (clip3, 0, 1),
-            (clip4, 0, 1),
-            (clip1, 0, 1),
-            ]).build()
-    res.write_to('concattest2.avi')
+    # res = AudioMixClip([ScaleFilter(c, 960, 540) for c in [clip1, clip2, clip3, clip4]])
+    # res.write_to('mixtest.wav')
+    # res = ConcatDemux([
+    #         (clip1, 0, 1) for i in range(120)]).build()
+    # res.write_to('concattest2.avi')
+    res = GridFilter([clip1, clip2, clip3]).build()
+    res.write_to('gridtest.avi')
