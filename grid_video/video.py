@@ -14,15 +14,26 @@ from abc import ABCMeta, abstractmethod, abstractproperty
 # result_fname
 # write_to
 
+CLEANUP = True
 
 class FFMPEGErrorException(Exception):
     def __init__(self, msg, *args, **kwargs):
         super().__init__("FFMPEG error: " + msg, *args, **kwargs)
 
+def erlambda(): raise NotImplementedError("This property should have been overloaded")
 
 class BaseClip(metaclass=ABCMeta):
 
     suffix = "_"
+
+    def __init__(self, cleanup=True):
+        self.cleanup = cleanup
+        self.executed = False
+
+        # These two should be overriden in child classes
+        self.name_base = None
+        self.dependencies = None
+
     
     def separate_raw_audio(self):
         return RawAudioClip(self)
@@ -40,12 +51,19 @@ class BaseClip(metaclass=ABCMeta):
         else:
             return None
 
+    def __del__(self):
+        if self.cleanup and self.executed:
+            print("cleaning up", self.name_base)
+            os.remove(self.result_fname)
+
+
 
 class RawAudioClip(BaseClip):
 
     suffix = "_audioonly"
 
     def __init__(self, source):
+        super().__init__()
         self.name_base = source.name_base + "_audioonly"
         self.output_path = self.name_base + ".wav"
         self.source = source
@@ -81,6 +99,7 @@ class FilterClip(BaseClip):
     suffix = "_filter"
 
     def __init__(self, filter_string, dependencies, video_streams=1, audio_streams=1):
+        super().__init__()
         self.dependencies = dependencies
         self.filter_string = filter_string
         self.map_list = []
@@ -123,6 +142,7 @@ class AudioMixClip(BaseClip):
     # TODO Rewrite as Filter and FilterClip
 
     def __init__(self, dependencies):
+        super().__init__()
         self.dependencies = dependencies
         self.name_base = self.dependencies[0].name_base + "_audiomix"
         self.extention = '.wav'
@@ -162,6 +182,7 @@ class FileClip(BaseClip):
     suffix = "_nonreachable"
 
     def __init__(self, fname):
+        super().__init__(cleanup=False)
         self.output_path = fname
         self.executed = True
         _directory, base, _ext = split_path(fname)
@@ -216,6 +237,7 @@ class DemuxAudioClip(BaseClip):
     suffix = "_conaudio"
 
     def __init__(self, concat_template, dependencies):
+        super().__init__()
         self.concat_template = concat_template
         self.dependencies = [c.separate_raw_audio() for c in dependencies]
         self.name_base = dependencies[0].name_base + self.suffix
@@ -261,6 +283,7 @@ class DemuxVideoClip(BaseClip):
     suffix = "_convideo"
 
     def __init__(self, concat_template, dependencies):
+        super().__init__()
         self.concat_template = concat_template
         self.dependencies = dependencies
         self.name_base = dependencies[0].name_base + self.suffix
@@ -306,6 +329,7 @@ class AudioVideoMergeClip(BaseClip):
     suffix = "_mergeaudio"
 
     def __init__(self, video_clip, audio_clip):
+        super().__init__()
         self.video_clip = video_clip
         self.audio_clip = audio_clip
         self.name_base = video_clip.name_base + self.suffix
@@ -363,8 +387,7 @@ class ConcatDemux:
     def build(self):
         return AudioVideoMergeClip(
                 DemuxVideoClip(self.template, self.dependencies),
-                DemuxAudioClip(self.template, self.dependencies),
-                'temp_demux_full.avi')
+                DemuxAudioClip(self.template, self.dependencies))
 
 class ScaleFilter:
     
@@ -442,6 +465,8 @@ if __name__ == "__main__":
     clip2 = FileClip("./soundbanks/copy_guitar/c4.avi")
     clip3 = FileClip("./soundbanks/copy_guitar/e4.avi")
     clip4 = FileClip("./soundbanks/copy_guitar/a4.avi")
+
+    print(clip1.dependencies)
 
 
     # res = AudioMixClip([ScaleFilter(c, 960, 540) for c in [clip1, clip2, clip3, clip4]])
